@@ -1,4 +1,4 @@
-package org.example.tron;
+package ch.tbz.tron;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

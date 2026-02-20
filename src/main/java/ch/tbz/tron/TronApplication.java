@@ -1,4 +1,4 @@
-package org.example.tron;
+package ch.tbz.tron;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
