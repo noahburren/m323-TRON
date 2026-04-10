@@ -1,0 +1,1 @@
+export const wsUrl = "ws://localhost:8080/ws/tron";

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>TRON WS Client</title>
+
+    <link rel="stylesheet" href="/tron.css">
+</head>
+<body>
+<div class="wrap">
+    <div class="stage">
+        <div class="hudTop">
+            <div class="badge"><span class="dot" id="wsDot"></span> ws</div>
+            <div class="badge">status: <span id="status">-</span></div>
+            <div class="badge">tick: <span id="tick">-</span></div>
+        </div>
+        <canvas id="c"></canvas>
+    </div>
+
+    <div class="panel">
+        <h1>TRON Console</h1>
+
+        <div class="kv">
+            <div class="k">WS URL</div><div class="v" id="wsUrl">-</div>
+            <div class="k">Grid</div><div class="v" id="gridInfo">-</div>
+            <div class="k">Players</div><div class="v" id="playerInfo">-</div>
+        </div>
+
+        <div class="legend">
+            <div class="chip"><span class="sw sw-p1"></span> p1</div>
+            <div class="chip"><span class="sw sw-p2"></span> p2</div>
+        </div>
+
+        <div class="hint">
+            Steuerung: Pfeiltasten oder WASD senden <span class="v">TURN</span>.
+        </div>
+
+        <div class="keys">
+            <div class="key">↑ UP</div>
+            <div class="key">↓ DOWN</div>
+            <div class="key">← LEFT</div>
+            <div class="key">→ RIGHT</div>
+            <div class="key">WASD</div>
+        </div>
+
+        <div class="log" id="log"></div>
+    </div>
+</div>
+
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
