@@ -1,5 +1,18 @@
+import "./types.js";
 import { canvas, ctx } from "./ui.js";
 
+/** Maps direction strings to unit vectors — avoids mutable let dx/dy reassignment */
+const DIRECTION_VECTORS = {
+    UP:    { dx: 0,  dy: -1 },
+    DOWN:  { dx: 0,  dy:  1 },
+    LEFT:  { dx: -1, dy:  0 },
+    RIGHT: { dx: 1,  dy:  0 },
+};
+
+/**
+ * @param {GameState} state
+ * @param {string|null} winner
+ */
 export function render(state, winner) {
     const w = state.width, h = state.height;
     if (!w || !h) return;
@@ -30,14 +43,15 @@ export function render(state, winner) {
     drawPlayers(state.players || [], offX, offY, cell);
 
     if (state.status === "FINISHED") {
-        let text = "GAME OVER";
-        if (winner === "p1") text = "BLUE WINS";
-        if (winner === "p2") text = "PINK WINS";
-        if (winner === "TIE") text = "TIE";
+        const text = winner === "p1" ? "BLUE WINS"
+                   : winner === "p2" ? "PINK WINS"
+                   : winner === "TIE" ? "TIE"
+                   : "GAME OVER";
         overlayText(offX, offY, boardW, boardH, text);
     }
 }
 
+/** @param {number} offX @param {number} offY @param {number} w @param {number} h @param {number} cell */
 function drawGrid(offX, offY, w, h, cell) {
     ctx.save();
 
@@ -101,19 +115,18 @@ function glowRect(x, y, w, h, color, blur) {
     ctx.restore();
 }
 
+/** @param {Trail[]} walls @param {number} offX @param {number} offY @param {number} cell */
 function drawWalls(walls, offX, offY, cell) {
     if (!Array.isArray(walls) || walls.length === 0) return;
 
-    const byOwner = new Map();
-    for (const t of walls) {
-        const p = t.position;
-        if (!p) continue;
-        const owner = t.ownerId || "unknown";
-        if (!byOwner.has(owner)) byOwner.set(owner, []);
-        byOwner.get(owner).push(p);
-    }
+    const wallsByOwner = walls
+        .filter(t => t.position)
+        .reduce((map, t) => {
+            const owner = t.ownerId || "unknown";
+            return new Map([...map, [owner, [...(map.get(owner) ?? []), t.position]]]);
+        }, new Map());
 
-    for (const [owner, pts] of byOwner.entries()) {
+    [...wallsByOwner.entries()].forEach(([owner, pts]) => {
         const isP1 = owner === "p1";
         const core = isP1 ? "rgba(0,240,255,0.95)" : "rgba(255,59,209,0.95)";
         const glow = isP1 ? "rgba(0,240,255,0.55)" : "rgba(255,59,209,0.55)";
@@ -138,9 +151,13 @@ function drawWalls(walls, offX, offY, cell) {
         ctx.lineWidth = lineW;
         strokeOrderedSegments(pts, offX, offY, cell);
         ctx.restore();
-    }
+    });
 }
 
+/**
+ * @param {number} offX @param {number} offY @param {number} cell @param {Position} p
+ * @returns {{ x: number, y: number }}
+ */
 function center(offX, offY, cell, p) {
     return {
         x: offX + p.x * cell + cell / 2,
@@ -148,6 +165,7 @@ function center(offX, offY, cell, p) {
     };
 }
 
+/** @param {Position[]} pts @param {number} offX @param {number} offY @param {number} cell */
 function strokeOrderedSegments(pts, offX, offY, cell) {
     ctx.beginPath();
 
@@ -160,21 +178,21 @@ function strokeOrderedSegments(pts, offX, offY, cell) {
 
         if (dx + dy !== 1) continue;
 
-        const ca = center(offX, offY, cell, a);
-        const cb = center(offX, offY, cell, b);
-        ctx.moveTo(ca.x, ca.y);
-        ctx.lineTo(cb.x, cb.y);
+        const centerA = center(offX, offY, cell, a);
+        const centerB = center(offX, offY, cell, b);
+        ctx.moveTo(centerA.x, centerA.y);
+        ctx.lineTo(centerB.x, centerB.y);
     }
 
     ctx.stroke();
 }
 
+/** @param {Player[]} players @param {number} offX @param {number} offY @param {number} cell */
 function drawPlayers(players, offX, offY, cell) {
     if (!Array.isArray(players)) return;
 
-    for (const pl of players) {
+    players.filter(pl => pl.position).forEach((pl) => {
         const p = pl.position;
-        if (!p) continue;
 
         const isP1 = pl.id === "p1";
         const base = isP1 ? "#00f0ff" : "#ff3bd1";
@@ -185,7 +203,6 @@ function drawPlayers(players, offX, offY, cell) {
         const y = offY + p.y * cell;
         const cx = x + cell / 2;
         const cy = y + cell / 2;
-
         const r = Math.max(4, cell * 0.42);
 
         ctx.save();
@@ -204,12 +221,7 @@ function drawPlayers(players, offX, offY, cell) {
         ctx.fill();
         ctx.restore();
 
-        const d = pl.direction;
-        let dx = 0, dy = 0;
-        if (d === "UP") dy = -1;
-        if (d === "DOWN") dy = 1;
-        if (d === "LEFT") dx = -1;
-        if (d === "RIGHT") dx = 1;
+        const { dx, dy } = DIRECTION_VECTORS[pl.direction] ?? { dx: 0, dy: 0 };
 
         ctx.save();
         ctx.strokeStyle = "rgba(255,255,255,0.9)";
@@ -220,7 +232,7 @@ function drawPlayers(players, offX, offY, cell) {
         ctx.lineTo(cx + dx * r * 0.9, cy + dy * r * 0.9);
         ctx.stroke();
         ctx.restore();
-    }
+    });
 }
 
 function overlayText(x, y, w, h, text) {
@@ -234,6 +246,6 @@ function overlayText(x, y, w, h, text) {
     ctx.fillStyle = "rgba(230,245,255,0.92)";
     ctx.shadowColor = "rgba(0,240,255,0.35)";
     ctx.shadowBlur = 18;
-    ctx.fillText(text, x + w/2, y + h/2);
+    ctx.fillText(text, x + w / 2, y + h / 2);
     ctx.restore();
 }

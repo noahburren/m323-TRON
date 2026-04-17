@@ -6,37 +6,29 @@ import ch.tbz.tron.core.reducer.GameReducer;
 import ch.tbz.tron.events.GameEvent;
 import ch.tbz.tron.events.TurnEvent;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public final class Engine {
     private Engine() {}
 
     /**
-     * PURE: kompletter Tick.
-     * - Events werden angewendet (pure)
-     * - daraus wird eine Input-Map gebaut (pure)
-     * - StepLogic macht Bewegung/Kollision (pure)
+     * PURE: complete tick.
+     * Events are applied (pure), an input map is built (pure),
+     * then StepLogic handles movement and collision (pure).
      */
     public static State tick(State state, List<GameEvent> eventsThisTick) {
-        // 1) Richtung im State aktualisieren (Reducer)
         State reduced = GameReducer.reduceAll(state, eventsThisTick);
-
-        // 2) zusätzlich eine Input-Map aufbauen (letztes TURN-Event gewinnt)
         Map<String, Direction> inputs = toInputs(eventsThisTick);
-
-        // 3) Bewegung + Collision
         return StepLogic.step(reduced, inputs);
     }
 
+    /** Collapses all TurnEvents into a playerId→Direction map; last event per player wins. */
     private static Map<String, Direction> toInputs(List<GameEvent> events) {
-        Map<String, Direction> inputs = new HashMap<>();
-        for (GameEvent e : events) {
-            if (e instanceof TurnEvent t) {
-                inputs.put(t.playerId(), t.direction());
-            }
-        }
-        return inputs;
+        return events.stream()
+                .filter(e -> e instanceof TurnEvent)
+                .map(e -> (TurnEvent) e)
+                .collect(Collectors.toMap(TurnEvent::playerId, TurnEvent::direction, (a, b) -> b));
     }
 }
