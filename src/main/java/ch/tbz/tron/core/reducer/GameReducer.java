@@ -10,13 +10,11 @@ public final class GameReducer {
     private GameReducer() {}
 
     /**
-     * PURE: State + Event -> neuer State.
-     * Keine I/O, keine Mutation des Input-States.
+     * PURE: (State, Event) → new State.
+     * No I/O, no mutation of the input state.
      */
     public static State reduce(State state, GameEvent event) {
-        if (state.status() == GameStatus.FINISHED) {
-            return state;
-        }
+        if (state.status() == GameStatus.FINISHED) return state;
 
         if (event instanceof TurnEvent turn) {
             return applyTurn(state, turn);
@@ -25,12 +23,13 @@ public final class GameReducer {
         return state;
     }
 
+    /**
+     * PURE recursive fold: applies each event in order.
+     * Base case: empty list returns state unchanged.
+     */
     public static State reduceAll(State state, List<GameEvent> events) {
-        State current = state;
-        for (GameEvent e : events) {
-            current = reduce(current, e);
-        }
-        return current;
+        if (events.isEmpty()) return state;
+        return reduceAll(reduce(state, events.get(0)), events.subList(1, events.size()));
     }
 
     private static State applyTurn(State state, TurnEvent turn) {
@@ -38,10 +37,7 @@ public final class GameReducer {
                 .map(p -> {
                     if (!p.id().equals(turn.playerId())) return p;
                     if (!p.alive()) return p;
-
-                    // kein 180° Turn
                     if (p.direction().isOpposite(turn.direction())) return p;
-
                     return p.withDirection(turn.direction());
                 })
                 .toList();
@@ -51,7 +47,7 @@ public final class GameReducer {
                 state.width(),
                 state.height(),
                 List.copyOf(updated),
-                state.walls(), // walls bleibt unverändert
+                state.walls(),
                 state.status()
         );
     }

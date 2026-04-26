@@ -3,83 +3,68 @@ package ch.tbz.tron.core.logic;
 import ch.tbz.tron.core.model.*;
 
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public final class StepLogic {
     private StepLogic() {}
 
     /**
-     * PURE: Keine I/O, kein Timer, kein Netzwerk, keine Mutation am Input-State.
-     * inputs: letzte gewünschte Richtung pro Spieler (optional).
+     * PURE: no I/O, no timer, no network, no mutation of the input state.
+     * inputs: desired direction per player for this tick (may be empty).
      */
     public static State step(State state, Map<String, Direction> inputs) {
-        if (state.status() == GameStatus.FINISHED) {
-            return state;
-        }
+        if (state.status() == GameStatus.FINISHED) return state;
 
-        // 1) Richtung anwenden (kein 180° Turn)
+        // 1) Apply direction inputs — 180° reversal is blocked
         List<Player> directed = state.players().stream()
                 .map(p -> applyDirection(p, inputs.get(p.id())))
                 .toList();
 
-        // 2) Trail: aktuelle Positionen lebender Spieler werden an die Walls angehängt (ORDERED!)
-        List<Trail> newWalls = new ArrayList<>(state.walls());
-        for (Player p : directed) {
-            if (p.alive()) {
-                newWalls.add(new Trail(p.position(), p.id()));
-            }
-        }
+        // 2) Append alive players' current positions to the trail wall (order preserved)
+        List<Trail> newWalls = Stream.concat(
+                state.walls().stream(),
+                directed.stream()
+                        .filter(Player::alive)
+                        .map(p -> new Trail(p.position(), p.id()))
+        ).collect(Collectors.toList());
 
-        // 2.1 Occupied-Set für schnelle Collision (Positionen aller Trails)
-        Set<Position> occupied = new HashSet<>();
-        for (Trail t : newWalls) {
-            occupied.add(t.position());
-        }
+        // 3) Build occupied set for O(1) collision lookup
+        Set<Position> occupied = newWalls.stream()
+                .map(Trail::position)
+                .collect(Collectors.toSet());
 
-        // 3) Move proposals berechnen (from -> to)
-        Map<String, Position> from = new HashMap<>();
-        Map<String, Position> to = new HashMap<>();
-        for (Player p : directed) {
-            from.put(p.id(), p.position());
-            if (p.alive()) {
-                to.put(p.id(), p.position().move(p.direction()));
-            }
-        }
+        // 4) Compute move proposals: current position (from) and next position (to)
+        Map<String, Position> from = directed.stream()
+                .collect(Collectors.toMap(Player::id, Player::position));
+        Map<String, Position> to = directed.stream()
+                .filter(Player::alive)
+                .collect(Collectors.toMap(Player::id, p -> p.position().move(p.direction())));
 
-        // 4) Kollisionen bestimmen
+        // 5) Determine dead players
         Set<String> dead = new HashSet<>();
 
-        // 4.1 Out of bounds oder in Wall
-        for (Player p : directed) {
-            if (!p.alive()) continue;
-            Position next = to.get(p.id());
+        // 5.1 Out-of-bounds or wall collision
+        directed.stream()
+                .filter(Player::alive)
+                .filter(p -> !state.inBounds(to.get(p.id())) || occupied.contains(to.get(p.id())))
+                .map(Player::id)
+                .forEach(dead::add);
 
-            if (!state.inBounds(next)) {
-                dead.add(p.id());
-                continue;
-            }
+        // 5.2 Head-on: multiple players targeting the same cell
+        to.entrySet().stream()
+                .collect(Collectors.groupingBy(Map.Entry::getValue,
+                         Collectors.mapping(Map.Entry::getKey, Collectors.toList())))
+                .values().stream()
+                .filter(ids -> ids.size() >= 2)
+                .flatMap(List::stream)
+                .forEach(dead::add);
 
-            if (occupied.contains(next)) {
-                dead.add(p.id());
-            }
-        }
-
-        // 4.2 Head-on: mehrere Spieler in dieselbe Zelle
-        Map<Position, List<String>> byTarget = new HashMap<>();
-        for (var e : to.entrySet()) {
-            byTarget.computeIfAbsent(e.getValue(), k -> new ArrayList<>()).add(e.getKey());
-        }
-        for (var entry : byTarget.entrySet()) {
-            if (entry.getValue().size() >= 2) {
-                dead.addAll(entry.getValue());
-            }
-        }
-
-        // 4.3 Swap-Collision: A geht nach B.from und B nach A.from
-        List<String> ids = new ArrayList<>(to.keySet());
+        // 5.3 Swap collision: A moves to B's origin and B moves to A's origin
+        List<String> ids = List.copyOf(to.keySet());
         for (int i = 0; i < ids.size(); i++) {
             for (int j = i + 1; j < ids.size(); j++) {
-                String a = ids.get(i);
-                String b = ids.get(j);
+                String a = ids.get(i), b = ids.get(j);
                 if (Objects.equals(to.get(a), from.get(b)) && Objects.equals(to.get(b), from.get(a))) {
                     dead.add(a);
                     dead.add(b);
@@ -87,7 +72,7 @@ public final class StepLogic {
             }
         }
 
-        // 5) Spieler aktualisieren (Position nur wenn nicht dead)
+        // 6) Move alive, non-dead players to their next position
         List<Player> moved = directed.stream()
                 .map(p -> {
                     if (!p.alive()) return p;
@@ -96,16 +81,17 @@ public final class StepLogic {
                 })
                 .toList();
 
-        // 6) Status setzen
-        long aliveCount = moved.stream().filter(Player::alive).count();
-        GameStatus newStatus = (aliveCount <= 1) ? GameStatus.FINISHED : GameStatus.RUNNING;
+        // 7) Determine new game status
+        GameStatus newStatus = moved.stream().filter(Player::alive).count() <= 1
+                ? GameStatus.FINISHED
+                : GameStatus.RUNNING;
 
         return new State(
                 state.tick() + 1,
                 state.width(),
                 state.height(),
                 List.copyOf(moved),
-                List.copyOf(newWalls),   // WICHTIG: List, nicht Set
+                List.copyOf(newWalls),
                 newStatus
         );
     }
@@ -113,7 +99,7 @@ public final class StepLogic {
     private static Player applyDirection(Player p, Direction desired) {
         if (!p.alive()) return p;
         if (desired == null) return p;
-        if (p.direction().isOpposite(desired)) return p; // kein 180° Turn
+        if (p.direction().isOpposite(desired)) return p;
         return p.withDirection(desired);
     }
 }
